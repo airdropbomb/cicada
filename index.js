@@ -1,10 +1,12 @@
 require('dotenv').config();
 const axios = require('axios');
+const fs = require('fs');
 
 const BASE_URL = 'https://campaign.cicada.finance/api';
 const CAMPAIGN_ID = 440;
-const AUTH_TOKEN = process.env.AUTH_TOKEN;
-const COOKIES = process.env.COOKIES;
+
+// Load accounts from JSON file
+const accounts = JSON.parse(fs.readFileSync('accounts.json', 'utf-8'));
 
 const userAgents = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
@@ -38,7 +40,7 @@ const logger = {
   success: (msg) => console.log(`${colors.green}[✅] ${msg}${colors.reset}`),
   loading: (msg) => console.log(`${colors.cyan}[⟳] ${msg}${colors.reset}`),
   step: (msg) => console.log(`${colors.white}[➤] ${msg}${colors.reset}`),
-  banner: () => {
+  banner: (accountId) => {
     console.log(`${colors.cyan}${colors.bold}`);
     console.log(`
  █████╗ ██████╗ ██████╗     ███╗   ██╗ ██████╗ ██████╗ ███████╗
@@ -49,16 +51,16 @@ const logger = {
 ╚═╝  ╚═╝╚═════╝ ╚═════╚═╝     ╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚══════╝
     `);
     console.log(`---------------------------------------------`);
-    console.log(`         cidada - ADB NODE          `);
+    console.log(`         cicada - ADB NODE [Account: ${accountId}]          `);
     console.log(`---------------------------------------------${colors.reset}`);
     console.log();
-  }
+  },
 };
 
-const getHeaders = () => ({
+const getHeaders = (account) => ({
   'accept': '*/*',
   'accept-language': 'en-US,en;q=0.6',
-  'authorization': AUTH_TOKEN,
+  'authorization': account.authToken,
   'content-type': 'application/json',
   'priority': 'u=1, i',
   'sec-ch-ua': '"Brave";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
@@ -68,121 +70,126 @@ const getHeaders = () => ({
   'sec-fetch-mode': 'cors',
   'sec-fetch-site': 'same-origin',
   'sec-gpc': '1',
-  'cookie': COOKIES,
+  'cookie': account.cookies,
   'Referer': 'https://campaign.cicada.finance/campaigns/6d70de3a-60ea-4896-b713-276de1bc02c7?code=g1nLayZV',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'user-agent': getRandomUserAgent(),
 });
 
-async function fetchCompletedPoints() {
-  logger.loading('Fetching completed points...');
+async function fetchCompletedPoints(account) {
+  logger.loading(`Fetching completed points for ${account.accountId}...`);
   try {
-    const response = await axios.get(`${BASE_URL}/points?campaignId=${CAMPAIGN_ID}`, { headers: getHeaders() });
-    logger.success(`Fetched ${response.data.length} completed points.`);
+    const response = await axios.get(`${BASE_URL}/points?campaignId=${CAMPAIGN_ID}`, { headers: getHeaders(account) });
+    logger.success(`Fetched ${response.data.length} completed points for ${account.accountId}.`);
     return new Set(response.data.map(item => item.task_id));
   } catch (error) {
-    logger.error(`Error fetching completed points: ${error.response?.data?.message || error.message}`);
+    logger.error(`Error fetching completed points for ${account.accountId}: ${error.response?.data?.message || error.message}`);
     return new Set();
   }
 }
 
-async function fetchCompletedGems() {
-  logger.loading('Fetching completed gems...');
+async function fetchCompletedGems(account) {
+  logger.loading(`Fetching completed gems for ${account.accountId}...`);
   try {
-    const response = await axios.get(`${BASE_URL}/gems?campaignId=${CAMPAIGN_ID}`, { headers: getHeaders() });
-    logger.success(`Fetched ${response.data.length} completed gems.`);
+    const response = await axios.get(`${BASE_URL}/gems?campaignId=${CAMPAIGN_ID}`, { headers: getHeaders(account) });
+    logger.success(`Fetched ${response.data.length} completed gems for ${account.accountId}.`);
     return new Set(response.data.map(item => item.task_id));
   } catch (error) {
-    logger.error(`Error fetching completed gems: ${error.response?.data?.message || error.message}`);
+    logger.error(`Error fetching completed gems for ${account.accountId}: ${error.response?.data?.message || error.message}`);
     return new Set();
   }
 }
 
-async function fetchTasks() {
-  logger.loading('Fetching all tasks...');
+async function fetchTasks(account) {
+  logger.loading(`Fetching all tasks for ${account.accountId}...`);
   try {
-    const response = await axios.get(`${BASE_URL}/campaigns/${CAMPAIGN_ID}/tasks`, { headers: getHeaders() });
-    logger.success(`Fetched ${response.data.length} tasks.`);
+    const response = await axios.get(`${BASE_URL}/campaigns/${CAMPAIGN_ID}/tasks`, { headers: getHeaders(account) });
+    logger.success(`Fetched ${response.data.length} tasks for ${account.accountId}.`);
     return response.data;
   } catch (error) {
-    logger.error(`Error fetching tasks: ${error.response?.data?.message || error.message}`);
+    logger.error(`Error fetching tasks for ${account.accountId}: ${error.response?.data?.message || error.message}`);
     return [];
   }
 }
 
-async function completeTask(taskId, taskTitle) {
-  logger.step(`Attempting to complete task: ${taskTitle} (ID: ${taskId})`);
+async function completeTask(account, taskId, taskTitle) {
+  logger.step(`Attempting to complete task for ${account.accountId}: ${taskTitle} (ID: ${taskId})`);
   try {
-    const pointsResponse = await axios.post(`${BASE_URL}/points/add`, { taskId }, { headers: getHeaders() });
-    logger.info(`Points added for task ${taskTitle} (ID: ${taskId}): ${pointsResponse.data.points} points`);
+    const pointsResponse = await axios.post(`${BASE_URL}/points/add`, { taskId }, { headers: getHeaders(account) });
+    logger.info(`Points added for task ${taskTitle} for ${account.accountId} (ID: ${taskId}): ${pointsResponse.data.points} points`);
 
     const gemsResponse = await axios.post(`${BASE_URL}/gems/credit`, {
       transactionType: 'TASK',
       options: { taskId },
-    }, { headers: getHeaders() });
-    logger.info(`Gems credited for task ${taskTitle} (ID: ${taskId}): ${gemsResponse.data.credit} gems`);
+    }, { headers: getHeaders(account) });
+    logger.info(`Gems credited for task ${taskTitle} for ${account.accountId} (ID: ${taskId}): ${gemsResponse.data.credit} gems`);
 
     return true;
   } catch (error) {
-    logger.error(`Error completing task ${taskTitle} (ID: ${taskId}): ${error.response?.data?.message || error.message}`);
+    logger.error(`Error completing task ${taskTitle} for ${account.accountId} (ID: ${taskId}): ${error.response?.data?.message || error.message}`);
     return false;
   }
 }
 
 async function processTasks() {
-  logger.banner();
-
-  if (!AUTH_TOKEN || !COOKIES) {
-    logger.error('AUTH_TOKEN or COOKIES not found in .env file. Please set them and try again.');
+  if (!accounts.length) {
+    logger.error('No accounts found in accounts.json file. Please set up accounts and try again.');
     return;
   }
 
-  const completedPoints = await fetchCompletedPoints();
-  const completedGems = await fetchCompletedGems();
-  logger.info(`Found ${completedPoints.size} tasks with points and ${completedGems.size} tasks with gems.`);
+  for (const account of accounts) {
+    logger.banner(account.accountId); // Show banner for each account with accountId
+    logger.info(`Processing tasks for account: ${account.accountId}`);
 
-  const tasks = await fetchTasks();
+    const completedPoints = await fetchCompletedPoints(account);
+    const completedGems = await fetchCompletedGems(account);
+    logger.info(`Found ${completedPoints.size} completed tasks with points and ${completedGems.size} tasks with gems for ${account.accountId}.`);
 
-  if (!tasks.length) {
-    logger.warn('No tasks found.');
-    return;
-  }
+    const tasks = await fetchTasks(account);
 
-  for (const task of tasks) {
-    
-    if (!completedPoints.has(task.id) || !completedGems.has(task.id)) {
-      const success = await completeTask(task.id, task.title);
-
-      if (success) {
-        logger.success(`Task ${task.title} completed successfully.`);
-      } else {
-        logger.error(`Failed to complete task ${task.title}.`);
-      }
-    } else {
-      logger.info(`Task ${task.title} (ID: ${task.id}) already completed. Skipping.`);
+    if (!tasks.length) {
+      logger.warn(`No tasks found for ${account.accountId}.`);
+      continue;
     }
 
-    if (task.subtasks && task.subtasks.length > 0) {
-      logger.info(`Found ${task.subtasks.length} subtasks for ${task.title}.`);
-      for (const subtask of task.subtasks) {
-        if (!completedPoints.has(subtask.id) || !completedGems.has(subtask.id)) {
-          const success = await completeTask(subtask.id, subtask.title);
+    for (const task of tasks) {
+      if (!completedPoints.has(task.id) || !completedGems.has(task.id)) {
+        const success = await completeTask(account, task.id, task.title);
 
-          if (success) {
-            logger.success(`Subtask ${subtask.title} completed successfully.`);
-          } else {
-            logger.error(`Failed to complete subtask ${subtask.title}.`);
-          }
+        if (success) {
+          logger.success(`Task ${task.title} completed successfully for ${account.accountId}.`);
         } else {
-          logger.info(`Subtask ${subtask.title} (ID: ${subtask.id}) already completed. Skipping.`);
+          logger.error(`Failed to complete task ${task.title} for ${account.accountId}.`);
+        }
+      } else {
+        logger.info(`Task ${task.title} (ID: ${task.id}) already completed for ${account.accountId}. Skipping.`);
+      }
+
+      if (task.subtasks && task.subtasks.length > 0) {
+        logger.info(`Found ${task.subtasks.length} subtasks for ${task.title} for ${account.accountId}.`);
+        for (const subtask of task.subtasks) {
+          if (!completedPoints.has(subtask.id) || !completedGems.has(subtask.id)) {
+            const subtaskSuccess = await completeTask(account, subtask.id, subtask.title);
+
+            if (subtaskSuccess) {
+              logger.success(`Subtask ${subtask.title} completed successfully for ${account.accountId}.`);
+            } else {
+              logger.error(`Failed to complete subtask ${subtask.title} for ${account.accountId}.`);
+            }
+          } else {
+            logger.info(`Subtask ${subtask.title} (ID: ${subtask.id}) already completed for ${account.accountId}. Skipping.`);
+          }
         }
       }
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    logger.success(`All tasks and subtasks processed for ${account.accountId}.`);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Delay between accounts
   }
 
-  logger.success('All tasks and subtasks processed.');
+  logger.success('All accounts processed successfully.');
 }
 
 processTasks().catch(error => logger.error(`Bot error: ${error.message}`));
